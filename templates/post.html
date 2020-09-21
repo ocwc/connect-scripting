@@ -1,0 +1,21 @@
+<p>
+    {% if authors %}<b>Author{{ countries|pluralize("", "s") }}</b>: {{ authors|unique|join(", ") }}<br/>{% endif %}
+    {% if orgs %}<b>Institution{{ countries|pluralize("", "s") }}</b>: {{ orgs|unique|join(", ") }}<br/>{% endif %}
+    {% if countries %}<b>Author's countr{{ countries|pluralize("y", "ies") }}</b>: {{
+    countries|unique|join(", ") }}<br/>{% endif %}
+</p>
+
+<p>
+    <b>Topic:</b> {{ topic }}<br/>
+    <b>Sector</b>: {{ sector }}<br/>
+    <b>UNESCO Area of Focus</b>: {{ unesco }}<br/>
+</p>
+
+<h2>Abstract</h2>
+{{ description }}
+
+<h2>Keywords</h2>
+<p>
+    {{ keywords|join(", ") }}<br/>
+</p>
+
