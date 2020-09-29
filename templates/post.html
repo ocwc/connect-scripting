@@ -1,14 +1,15 @@
 <p>
-    {% if authors %}<b>Author{{ countries|pluralize("", "s") }}</b>: {{ authors|unique|join(", ") }}<br/>{% endif %}
-    {% if orgs %}<b>Institution{{ countries|pluralize("", "s") }}</b>: {{ orgs|unique|join(", ") }}<br/>{% endif %}
-    {% if countries %}<b>Author's countr{{ countries|pluralize("y", "ies") }}</b>: {{
+    {% if authors %}<b>Author{{ authors|pluralize("", "s") }}</b>: {{ authors|unique|join(", ") }}<br/>{% endif %}
+    {% if orgs %}<b>Institution{{ orgs|pluralize("", "s") }}</b>: {{ orgs|unique|join(", ") }}<br/>{% endif %}
+    {% if countries %}<b>Countr{{ countries|pluralize("y", "ies") }}</b>: {{
     countries|unique|join(", ") }}<br/>{% endif %}
 </p>
 
 <p>
-    <b>Topic:</b> {{ topic }}<br/>
+    <b>Topic</b>: {{ topic }}<br/>
     <b>Sector</b>: {{ sector }}<br/>
     <b>UNESCO Area of Focus</b>: {{ unesco }}<br/>
+    <b>Session Format</b>: {{ session_format }}</b>
 </p>
 
 <h2>Abstract</h2>

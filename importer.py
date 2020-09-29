@@ -13,14 +13,16 @@ CATEGORIES = {
     "Global Collaboration, Strategies, & Policies in Open Education": "Policies",
     "Innovation through MOOCs practices": "MOOCs",
     "Technologies for Open Education": "OE Technologies",
+    "Keynote": "Keynote",
 }
 
 SYNC_ID = 17
 ASYNC_ID = 25
 
 
-def pluralize(number, singular="", plural="s"):
-    if number == 1:
+def pluralize(_list, singular="", plural="s"):
+    _list = list(set(_list))
+    if len(_list) == 1:
         return singular
     else:
         return plural
@@ -32,7 +34,12 @@ class DiscourseImporter(object):
         if topic:
             body = self.post_template.render(**kwargs)
 
-            if kwargs.get("sync") == "sync":
+            if kwargs.get("timezone"):
+                sync = True
+            else:
+                sync = kwargs.get("sync")
+
+            if sync:
                 sync = True
                 topic_id = SYNC_ID
                 title = "🎤 {}".format(kwargs.get("title"))
@@ -52,14 +59,28 @@ class DiscourseImporter(object):
                 ],
             }
 
-            response = requests.post(
-                "{}/posts.json".format(API_HOST),
-                data=data,
-                headers={"Api-Key": API_KEY, "Api-Username": API_USER},
-            ).json()
+            if kwargs.get("session_format") != "Keynote":
+                response = requests.post(
+                    "{}/posts.json".format(API_HOST),
+                    data=data,
+                    headers={"Api-Key": API_KEY, "Api-Username": API_USER},
+                ).json()
+                print(response)
 
-            print(response)
-            url = "/t/{}/{}".format(response["topic_slug"], response["topic_id"])
+                url = "/t/{}/{}".format(response["topic_slug"], response["topic_id"])
+            else:
+                response = requests.get(
+                    "{}{}/l/latest.json?ascending=false&per_page=50".format(
+                        API_HOST, "/tag/oeg20_{}/".format(kwargs.get("easychair"))
+                    )
+                )
+                response = response.json()
+                if response.get("topic_list"):
+                    topic = response["topic_list"]["topics"][0]
+                    url = "/t/{}/{}".format(topic["slug"], topic["id"])
+                else:
+                    print("No keynote with id {}".format(kwargs.get("easychair")))
+                    return
 
             data = {
                 "title": kwargs.get("title"),
@@ -67,12 +88,14 @@ class DiscourseImporter(object):
                 "end": kwargs.get("end_utc"),
                 "url": url,
                 "topic": kwargs.get("topic"),
-                "format": kwargs.get("session_format"),
+                "kind": kwargs.get("session_format"),
                 "author": kwargs.get("authors"),
-                "sync": sync,
+                "sync": int(sync),
                 "easychair": kwargs.get("easychair"),
                 "timezone": kwargs.get("timezone"),
                 "unesco": kwargs.get("unesco"),
+                "track": kwargs.get("track"),
+                "sector": kwargs.get("sector"),
             }
 
             response = requests.post(
@@ -81,8 +104,8 @@ class DiscourseImporter(object):
                 headers={"Api-Key": API_KEY, "Api-Username": API_USER},
             ).json()
 
-            pprint(response)
-            time.sleep(1)
+            print(response)
+            time.sleep(1.5)
 
     def __init__(self, filename):
         self.workbook = xlrd.open_workbook(filename)
@@ -91,7 +114,31 @@ class DiscourseImporter(object):
             self.post_template = Template(file_.read())
 
         self.clear_schedule()
+        self.clear_posts()
         self.create_topics()
+
+    def clear_posts(self):
+        for url in ["/c/oeg-2020/live-sessions/17", "/c/oeg-2020/anytime-sessions/25"]:
+            while True:
+                response = requests.get(
+                    "{}{}/l/latest.json?ascending=false&per_page=50".format(
+                        API_HOST, url
+                    )
+                )
+                topics = response.json()["topic_list"]["topics"]
+                if len(topics) == 1:
+                    break
+
+                for topic in topics:
+                    if topic["pinned"]:
+                        continue
+
+                    response = requests.delete(
+                        "{}/t/{}.json".format(API_HOST, topic["id"]),
+                        headers={"Api-Key": API_KEY, "Api-Username": API_USER},
+                    )
+                    print(response.content)
+                    time.sleep(1)
 
     def clear_schedule(self):
         response = requests.get(
@@ -99,7 +146,7 @@ class DiscourseImporter(object):
             headers={"Api-Key": API_KEY, "Api-Username": API_USER},
         ).json()
         print(response)
-        print(len(response["conference_plugin"][0]["conference_plugin"]))
+        print(len(response["conference_plugin"]))
 
         response = requests.delete(
             "{}/conference/clear.json".format(API_HOST),
@@ -154,16 +201,16 @@ class DiscourseImporter(object):
             authors[easychair]["orgs"].append(org)
 
         for sheetname, tz in [
+            ("Async & NA", None),
             ("Taiwan-16-18-20", "Asia/Taipei"),
             ("Netherlands-16-18-20", "Europe/Berlin"),
             ("Canada-16-18-20", "America/Toronto"),
-            ("Async & NA", None),
         ]:
             sheet = self.workbook.sheet_by_name(sheetname)
             for row_idx in range(
                 2,
                 # sheet.nrows
-                5,
+                10,
             ):
                 session_format = sheet.cell(row_idx, 0).value
                 timezone = sheet.cell(row_idx, 1).value
@@ -171,16 +218,17 @@ class DiscourseImporter(object):
                     easychair = int(sheet.cell(row_idx, 2).value)
                 except ValueError:
                     continue
-                # authors = sheet.cell(row_idx, 3).value
+
                 title = sheet.cell(row_idx, 4).value
                 sync = sheet.cell(row_idx, 5).value
                 sector = sheet.cell(row_idx, 6).value
                 unesco = sheet.cell(row_idx, 7).value
                 topic = sheet.cell(row_idx, 8).value
+
                 try:
-                    description = sheet.cell(row_idx, 13).value
+                    track = sheet.cell(row_idx, 13).value
                 except IndexError:
-                    description = None
+                    track = ""
 
                 if tz:
                     duration = sheet.cell(row_idx, 9).value
@@ -223,6 +271,7 @@ class DiscourseImporter(object):
                     keywords=data.get(easychair, {}).get("keywords", []),
                     orgs=authors.get(easychair, {}).get("orgs"),
                     countries=authors.get(easychair, {}).get("countries"),
+                    track=track,
                 )
 
 
