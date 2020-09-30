@@ -13,7 +13,7 @@ CATEGORIES = {
     "Global Collaboration, Strategies, & Policies in Open Education": "Policies",
     "Innovation through MOOCs practices": "MOOCs",
     "Technologies for Open Education": "OE Technologies",
-    "Keynote": "Keynote",
+    # "Keynote": "Keynote",
 }
 
 SYNC_ID = 17
@@ -34,19 +34,20 @@ class DiscourseImporter(object):
         if topic:
             body = self.post_template.render(**kwargs)
 
-            if kwargs.get("timezone"):
-                sync = True
-            else:
-                sync = kwargs.get("sync")
+            # print(kwargs)
+            # if kwargs.get("sync") == "sync":
+            #     sync = True
+            # else:
 
-            if sync:
+            sync = kwargs.get("sync")
+            if sync == "sync":
                 sync = True
                 topic_id = SYNC_ID
-                title = "🎤 {}".format(kwargs.get("title"))
+                title = ":sync: {}".format(kwargs.get("title"))
             else:
                 sync = False
                 topic_id = ASYNC_ID
-                title = "📽️ {}".format(kwargs.get("title"))
+                title = ":async: {}".format(kwargs.get("title"))
 
             data = {
                 "title": title,
@@ -54,10 +55,13 @@ class DiscourseImporter(object):
                 "category": topic_id,
                 "tags[]": [
                     "oeg20_{}".format(kwargs["easychair"]),
-                    CATEGORIES[topic],
+                    CATEGORIES.get(topic, ""),
                     kwargs.get("session_format"),
                 ],
             }
+            print("----")
+            print(data)
+            print("----")
 
             if kwargs.get("session_format") != "Keynote":
                 response = requests.post(
@@ -82,14 +86,18 @@ class DiscourseImporter(object):
                     print("No keynote with id {}".format(kwargs.get("easychair")))
                     return
 
+            topic = kwargs.get("topic")
+            if topic == "Keynote":
+                topic = ""
+
             data = {
                 "title": kwargs.get("title"),
                 "start": kwargs.get("start_utc"),
                 "end": kwargs.get("end_utc"),
                 "url": url,
-                "topic": kwargs.get("topic"),
+                "topic": topic,
                 "kind": kwargs.get("session_format"),
-                "author": kwargs.get("authors"),
+                "author": ", ".join(kwargs.get("authors")),
                 "sync": int(sync),
                 "easychair": kwargs.get("easychair"),
                 "timezone": kwargs.get("timezone"),
@@ -209,8 +217,8 @@ class DiscourseImporter(object):
             sheet = self.workbook.sheet_by_name(sheetname)
             for row_idx in range(
                 2,
-                # sheet.nrows
-                10,
+                sheet.nrows
+                # 10,
             ):
                 session_format = sheet.cell(row_idx, 0).value
                 timezone = sheet.cell(row_idx, 1).value
@@ -219,6 +227,7 @@ class DiscourseImporter(object):
                 except ValueError:
                     continue
 
+                authors_sheet = sheet.cell(row_idx, 3).value
                 title = sheet.cell(row_idx, 4).value
                 sync = sheet.cell(row_idx, 5).value
                 sector = sheet.cell(row_idx, 6).value
@@ -254,11 +263,16 @@ class DiscourseImporter(object):
                     start_utc = None
                     end_utc = None
 
+                # Fallback to in-sheet names in such cases as Keynotes
+                author_names = authors.get(easychair, {}).get("names")
+                if not author_names:
+                    author_names = authors_sheet.split(", ")
+
                 self._new_post(
                     session_format=session_format,
                     timezone=timezone,
                     easychair=easychair,
-                    authors=authors.get(easychair, {}).get("names"),
+                    authors=author_names,
                     title=title,
                     sync=sync,
                     sector=sector,
