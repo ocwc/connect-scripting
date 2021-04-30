@@ -34,11 +34,6 @@ class DiscourseImporter(object):
         if topic:
             body = self.post_template.render(**kwargs)
 
-            # print(kwargs)
-            # if kwargs.get("sync") == "sync":
-            #     sync = True
-            # else:
-
             sync = kwargs.get("sync")
             if sync == "sync":
                 sync = True
@@ -59,35 +54,49 @@ class DiscourseImporter(object):
                     kwargs.get("session_format"),
                 ],
             }
-            print("----")
-            print(data)
-            print("----")
+            # print("----")
+            # print(data)
+            # print("----")
 
-            if kwargs.get("session_format") != "Keynote":
-                response = requests.post(
-                    "{}/posts.json".format(API_HOST),
-                    data=data,
-                    headers={"Api-Key": API_KEY, "Api-Username": API_USER},
-                ).json()
-                print(response)
-
-                url = "/t/{}/{}".format(response["topic_slug"], response["topic_id"])
-            else:
-                response = requests.get(
-                    "{}{}/l/latest.json?ascending=false&per_page=50".format(
-                        API_HOST, "/tag/oeg20_{}/".format(kwargs.get("easychair"))
-                    )
+            # First we try to grab existing URL
+            response = requests.get(
+                "{}{}/l/latest.json?ascending=false&per_page=50".format(
+                    API_HOST, "/tag/oeg20_{}/".format(kwargs.get("easychair"))
                 )
-                response = response.json()
-                if response.get("topic_list"):
-                    topic = response["topic_list"]["topics"][0]
-                    url = "/t/{}/{}".format(topic["slug"], topic["id"])
+            )
+            response = response.json()
+            if response.get("topic_list"):
+                topic = response["topic_list"]["topics"][0]
+                url = "/t/{}/{}".format(topic["slug"], topic["id"])
+            else:
+                print("No session with #{}".format(kwargs.get("easychair")))
+
+                if kwargs.get("session_format") != "Keynote":
+                    response = requests.post(
+                        "{}/posts.json".format(API_HOST),
+                        data=data,
+                        headers={"Api-Key": API_KEY, "Api-Username": API_USER},
+                    ).json()
+                    url = "/t/{}/{}".format(
+                        response["topic_slug"], response["topic_id"]
+                    )
+                    print("Created #{} - {}".format(kwargs.get("easychair"), url))
                 else:
-                    print("No keynote with id {}".format(kwargs.get("easychair")))
-                    return
+                    response = requests.get(
+                        "{}{}/l/latest.json?ascending=false&per_page=50".format(
+                            API_HOST, "/tag/oeg20_{}/".format(kwargs.get("easychair"))
+                        )
+                    )
+                    response = response.json()
+                    if response.get("topic_list"):
+                        topic = response["topic_list"]["topics"][0]
+                        url = "/t/{}/{}".format(topic["slug"], topic["id"])
+                    else:
+                        print("No keynote with id {}".format(kwargs.get("easychair")))
+                        return
 
             topic = kwargs.get("topic")
-            if topic == "Keynote":
+            if topic == "Keynote" or topic == "Closing Session":
                 topic = ""
 
             data = {
@@ -101,9 +110,11 @@ class DiscourseImporter(object):
                 "sync": int(sync),
                 "easychair": kwargs.get("easychair"),
                 "timezone": kwargs.get("timezone"),
-                "unesco": kwargs.get("unesco"),
+                "unesco": kwargs.get("unesco", ""),
                 "track": kwargs.get("track"),
-                "sector": kwargs.get("sector"),
+                "sector": kwargs.get("sector", ""),
+                "zid": kwargs.get("zid", ""),
+                "zlink": kwargs.get("zlink", ""),
             }
 
             response = requests.post(
@@ -111,9 +122,11 @@ class DiscourseImporter(object):
                 data=data,
                 headers={"Api-Key": API_KEY, "Api-Username": API_USER},
             ).json()
+            # print(response)
 
-            print(response)
-            time.sleep(1.5)
+            # print(response)
+            time.sleep(0.75)
+            print(kwargs.get("easychair"))
 
     def __init__(self, filename):
         self.workbook = xlrd.open_workbook(filename)
@@ -122,7 +135,7 @@ class DiscourseImporter(object):
             self.post_template = Template(file_.read())
 
         self.clear_schedule()
-        self.clear_posts()
+        # self.clear_posts()
         self.create_topics()
 
     def clear_posts(self):
@@ -145,28 +158,28 @@ class DiscourseImporter(object):
                         "{}/t/{}.json".format(API_HOST, topic["id"]),
                         headers={"Api-Key": API_KEY, "Api-Username": API_USER},
                     )
-                    print(response.content)
-                    time.sleep(1)
+                    # print(response.content)
+                    time.sleep(1.5)
 
     def clear_schedule(self):
         response = requests.get(
             "{}/conference/schedule.json".format(API_HOST),
             headers={"Api-Key": API_KEY, "Api-Username": API_USER},
         ).json()
-        print(response)
-        print(len(response["conference_plugin"]))
+        # print(response)
+        # print(len(response["conference_plugin"]))
 
         response = requests.delete(
             "{}/conference/clear.json".format(API_HOST),
             headers={"Api-Key": API_KEY, "Api-Username": API_USER},
         )
-        print(response)
+        # print(response)
 
         response = requests.get(
             "{}/conference/schedule.json".format(API_HOST),
             headers={"Api-Key": API_KEY, "Api-Username": API_USER},
         ).json()
-        print(response)
+        # print(response)
 
     def create_topics(self):
         sheet = self.workbook.sheet_by_name("Easychair Export")
@@ -209,10 +222,10 @@ class DiscourseImporter(object):
             authors[easychair]["orgs"].append(org)
 
         for sheetname, tz in [
-            ("Async & NA", None),
             ("Taiwan-16-18-20", "Asia/Taipei"),
             ("Netherlands-16-18-20", "Europe/Berlin"),
             ("Canada-16-18-20", "America/Toronto"),
+            ("Async & NA", None),
         ]:
             sheet = self.workbook.sheet_by_name(sheetname)
             for row_idx in range(
@@ -233,6 +246,16 @@ class DiscourseImporter(object):
                 sector = sheet.cell(row_idx, 6).value
                 unesco = sheet.cell(row_idx, 7).value
                 topic = sheet.cell(row_idx, 8).value
+
+                try:
+                    zlink = sheet.cell(row_idx, 27).value
+                except IndexError:
+                    zlink = None
+
+                try:
+                    zid = sheet.cell(row_idx, 28).value
+                except IndexError:
+                    zid = None
 
                 try:
                     track = sheet.cell(row_idx, 13).value
@@ -286,6 +309,8 @@ class DiscourseImporter(object):
                     orgs=authors.get(easychair, {}).get("orgs"),
                     countries=authors.get(easychair, {}).get("countries"),
                     track=track,
+                    zlink=zlink,
+                    zid=zid,
                 )
 
 
@@ -297,26 +322,3 @@ def cli(filename):
 
 if __name__ == "__main__":
     cli()
-
-# import requests
-# from pprint import pprint
-#
-# API_KEY = '3009f8fce1a0f3b1b9ccca0bcc135070557b51137c3a430db436774b98d8ea8b'
-# API_HOST = 'http://localhost:3000'
-#
-#
-# data = {
-#   "title": "Imported session",
-#   "raw": "<b>This is</b> a new post. Hai world.",
-#   "category": 17,
-# }
-#
-# response = requests.post("{}/conference/schedule.json".format(API_HOST), data=data, headers={
-# 	"Api-Key": API_KEY,
-# 	'Api-Username': 'jure'
-# })
-#
-# try:
-# 	pprint(response.json())
-# except:
-# 	print(response.content)
